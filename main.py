@@ -1,43 +1,42 @@
-from flask import Flask, jsonify
+from flask import Flask, request, jsonify
+import os
 import requests
-import re
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
-API_KEY = "2f6fefcafc7c0f8a0889fc1cbca41b0d92dddaf5"
-PHONE_NUMBER = "+959421072418"
-API_URL = f"https://api.smschef.com/v1/messages?api_key={API_KEY}&number={PHONE_NUMBER}"
+API_SECRET = os.getenv("API_SECRET")
+DEVICE_ID = os.getenv("DEVICE_ID")
+SIM = os.getenv("SIM", 1)
+PRIORITY = os.getenv("PRIORITY", 1)
 
-def extract_otp(text):
-    match = re.findall(r"\b\d{4,8}\b", text)
-    return match[0] if match else None
-
-@app.route("/")
+@app.route("/", methods=["GET"])
 def home():
-    return "SMS Fetcher API is running."
+    return "SMSChef Webhook Listener is running."
 
-@app.route("/check_sms", methods=["GET"])
-def check_sms():
-    try:
-        response = requests.get(API_URL)
-        response.raise_for_status()
-        data = response.json()
-        messages = data.get("messages", [])
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.json
+    phone = data.get("phone")
+    message = data.get("message")
 
-        if not messages:
-            return jsonify({"status": "ok", "message": "No SMS found"})
+    if not phone or not message:
+        return jsonify({"error": "Missing phone or message"}), 400
 
-        latest = messages[0]
-        otp = extract_otp(latest["text"])
-        return jsonify({
-            "from": latest["from"],
-            "message": latest["text"],
-            "received_at": latest["received_at"],
-            "otp": otp or "not found"
-        })
+    payload = {
+        "secret": API_SECRET,
+        "mode": "devices",
+        "device": DEVICE_ID,
+        "sim": SIM,
+        "priority": PRIORITY,
+        "phone": phone,
+        "message": message
+    }
 
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
+    response = requests.post("https://www.cloud.smschef.com/api/send/sms", data=payload)
+    return jsonify(response.json()), response.status_code
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True)
